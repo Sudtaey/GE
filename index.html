@@ -1,0 +1,1122 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>KKU PARKING - ระบบจองที่จอดรถ มหาวิทยาลัยขอนแก่น</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lucide@0.263.0/dist/umd/lucide.min.js"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          brick: '#A5483A',
+          'brick-light': '#C96A50',
+          accent: '#FFB74D',
+          surface: '#F7F5F2',
+          text: '#2E2E2E'
+        }
+      }
+    }
+  }
+</script>
+<style>
+  * { font-family: 'Prompt', sans-serif; }
+  html, body { overflow-x: hidden; }
+
+  .page { display: none; opacity: 0; }
+  .page.active { display: flex; flex-direction: column; opacity: 1; }
+
+  .hero-gradient { background: radial-gradient(circle at 25% 15%, #C96A50 0%, #A5483A 45%, #5f261f 100%); }
+  .dot-pattern { background-image: radial-gradient(circle, rgba(255,255,255,0.5) 1px, transparent 1px); background-size: 22px 22px; }
+  .glass { background: rgba(255,255,255,0.14); backdrop-filter: blur(22px); border: 1px solid rgba(255,255,255,0.25); }
+  .glass-white { background: rgba(255,255,255,0.85); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.5); }
+
+  .ripple { position: relative; overflow: hidden; }
+  .ripple::after {
+    content: ''; position: absolute; inset: 0;
+    background: radial-gradient(circle, rgba(255,255,255,0.35) 10%, transparent 70%);
+    transform: scale(0); opacity: 0; transition: transform 0.5s, opacity 0.4s;
+  }
+  .ripple:active::after { transform: scale(4); opacity: 1; transition: transform 0s; }
+
+  .card-hover { transition: transform 0.2s, box-shadow 0.2s; }
+  .card-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(165,72,58,0.15); }
+
+  @keyframes fadeUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+  .fade-up { animation: fadeUp 0.45s ease forwards; }
+
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    20%,60% { transform: translateX(-6px); }
+    40%,80% { transform: translateX(6px); }
+  }
+  .shake { animation: shake 0.4s ease; }
+
+  @keyframes pulseDot { 0%,100%{transform:scale(1)} 50%{transform:scale(1.25)} }
+  .pulse-dot { animation: pulseDot 2s infinite; }
+
+  .input-field { transition: border-color 0.2s, box-shadow 0.2s, background 0.2s; }
+  .input-field:focus { border-color: #A5483A; box-shadow: 0 0 0 3px rgba(165,72,58,0.15); }
+  .input-field.error { border-color: #ef4444 !important; background: #fef2f2; }
+  .field-error-msg { display: none; color: #ef4444; font-size: 12px; margin-top: 4px; }
+  .field-error-msg.show { display: block; }
+
+  .tab-btn { transition: all 0.25s ease; }
+  .tab-btn.active { background: white; color: #A5483A; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+  .tab-btn:not(.active) { color: rgba(255,255,255,0.75); }
+
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2.5px solid rgba(165,72,58,0.25);
+    border-top-color: #A5483A;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: inline-block;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .toast {
+    position: fixed; bottom: 90px; left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.3s, transform 0.3s;
+    z-index: 200; max-width: 90%;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+
+  .autocomplete-item { transition: background 0.15s; }
+  .autocomplete-item:hover { background: #f3e8e5; }
+  #map-container { height: 100%; width: 100%; }
+  .bottom-nav-item { transition: color 0.2s; }
+  .bottom-nav-item.active-nav { color: #A5483A; }
+
+  .avatar-circle { display:flex; align-items:center; justify-content:center; background: linear-gradient(135deg, #A5483A, #C96A50); color:white; font-weight:600; }
+
+  .toggle-switch { width:40px; height:24px; border-radius:9999px; position:relative; cursor:pointer; transition: background 0.2s; }
+  .toggle-switch .knob { position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:9999px; background:white; box-shadow:0 1px 3px rgba(0,0,0,0.3); transition: transform 0.2s; }
+  .toggle-switch.on { background:#A5483A; }
+  .toggle-switch.on .knob { transform: translateX(16px); }
+  .toggle-switch.off { background:#d1d5db; }
+
+  ::-webkit-scrollbar { width:6px; height:6px; }
+  ::-webkit-scrollbar-thumb { background:#d9c9c4; border-radius:9999px; }
+</style>
+</head>
+<body class="w-full min-h-screen bg-surface text-text overflow-x-hidden">
+
+<!-- ============ LOGIN PAGE ============ -->
+<section id="page-login" class="page active min-h-screen w-full relative hero-gradient items-center justify-center px-4 py-10">
+  <div class="absolute inset-0 dot-pattern opacity-20 pointer-events-none"></div>
+  <div class="absolute -top-20 -left-20 w-72 h-72 bg-white/10 rounded-full blur-3xl pointer-events-none"></div>
+  <div class="absolute -bottom-24 -right-16 w-80 h-80 bg-black/10 rounded-full blur-3xl pointer-events-none"></div>
+
+  <div class="glass rounded-3xl w-full max-w-md p-7 sm:p-9 z-10 shadow-2xl fade-up">
+    <div class="flex flex-col items-center mb-6">
+      <div class="w-16 h-16 rounded-2xl bg-white/95 flex items-center justify-center shadow-lg mb-3">
+        <i data-lucide="car" class="text-brick" style="width:30px;height:30px"></i>
+      </div>
+      <h1 class="text-white font-bold text-2xl">KKU PARKING</h1>
+      <p class="text-white/75 text-sm mt-1 text-center">ระบบค้นหาและจองที่จอดรถ<br>มหาวิทยาลัยขอนแก่น</p>
+    </div>
+
+    <div class="flex gap-1 bg-black/15 rounded-2xl p-1 mb-5">
+      <button type="button" data-tab="student" class="tab-btn active flex-1 py-2.5 rounded-xl text-sm font-medium">รหัสนักศึกษา</button>
+      <button type="button" data-tab="email" class="tab-btn flex-1 py-2.5 rounded-xl text-sm font-medium">อีเมล KKU</button>
+    </div>
+
+    <form id="login-form" novalidate class="space-y-4">
+      <div id="field-student" class="field-group">
+        <label class="block text-white/85 text-xs font-medium mb-1.5">รหัสนักศึกษา / รหัสประจำตัวบุคลากร</label>
+        <div class="relative">
+          <i data-lucide="id-card" class="absolute left-4 top-1/2 -translate-y-1/2 text-brick/50" style="width:18px;height:18px"></i>
+          <input id="input-student-id" type="text" inputmode="numeric" maxlength="12" placeholder="เช่น 653020123-4"
+            class="input-field w-full pl-11 pr-4 py-3 rounded-2xl border border-transparent bg-white text-sm outline-none">
+        </div>
+        <p id="err-student-id" class="field-error-msg"></p>
+      </div>
+
+      <div id="field-email" class="field-group hidden">
+        <label class="block text-white/85 text-xs font-medium mb-1.5">อีเมล KKU</label>
+        <div class="relative">
+          <i data-lucide="mail" class="absolute left-4 top-1/2 -translate-y-1/2 text-brick/50" style="width:18px;height:18px"></i>
+          <input id="input-email" type="email" placeholder="name@kkumail.com"
+            class="input-field w-full pl-11 pr-4 py-3 rounded-2xl border border-transparent bg-white text-sm outline-none">
+        </div>
+        <p id="err-email" class="field-error-msg"></p>
+      </div>
+
+      <div>
+        <div class="flex items-center justify-between mb-1.5">
+          <label class="block text-white/85 text-xs font-medium">รหัสผ่าน</label>
+          <button type="button" id="forgot-link" class="text-white/70 text-xs hover:text-white underline-offset-2 hover:underline">ลืมรหัสผ่าน?</button>
+        </div>
+        <div class="relative">
+          <i data-lucide="lock" class="absolute left-4 top-1/2 -translate-y-1/2 text-brick/50" style="width:18px;height:18px"></i>
+          <input id="input-password" type="password" placeholder="กรอกรหัสผ่านของคุณ"
+            class="input-field w-full pl-11 pr-11 py-3 rounded-2xl border border-transparent bg-white text-sm outline-none">
+          <button type="button" id="toggle-password" class="absolute right-4 top-1/2 -translate-y-1/2 text-text/40 hover:text-text/70">
+            <i data-lucide="eye" style="width:18px;height:18px"></i>
+          </button>
+        </div>
+        <p id="err-password" class="field-error-msg"></p>
+      </div>
+
+      <div class="flex items-center justify-between pt-1">
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input id="remember-me" type="checkbox" class="w-4 h-4 rounded accent-brick cursor-pointer">
+          <span class="text-white/75 text-xs">จดจำการเข้าสู่ระบบ</span>
+        </label>
+      </div>
+
+      <button type="submit" id="submit-btn"
+        class="ripple w-full py-3.5 rounded-2xl bg-white text-brick font-semibold text-sm shadow-lg hover:bg-white/90 transition-colors flex items-center justify-center gap-2 mt-2">
+        <span id="submit-text">เข้าสู่ระบบ</span>
+      </button>
+
+      <div class="flex items-center gap-3 py-1">
+        <div class="flex-1 h-px bg-white/20"></div>
+        <span class="text-white/50 text-xs">หรือ</span>
+        <div class="flex-1 h-px bg-white/20"></div>
+      </div>
+
+      <button type="button" id="guest-btn"
+        class="ripple w-full py-3 rounded-2xl bg-white/15 text-white font-medium text-sm border border-white/30 hover:bg-white/25 transition-colors">
+        เข้าใช้งานแบบผู้เยี่ยมชม
+      </button>
+    </form>
+
+    <p class="text-white/50 text-xs text-center mt-6">
+      การเข้าสู่ระบบถือว่ายอมรับ <span class="underline cursor-pointer hover:text-white/80">ข้อกำหนดการใช้งาน</span>
+    </p>
+  </div>
+</section>
+
+<!-- ============ HOME PAGE ============ -->
+<section id="page-home" class="page min-h-screen w-full pb-28">
+  <header class="sticky top-0 z-30 glass-white px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-brick flex items-center justify-center">
+        <i data-lucide="car" class="text-white" style="width:18px;height:18px"></i>
+      </div>
+      <span class="font-semibold text-brick text-sm">KKU PARKING</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <button data-page="page-notifications" class="w-9 h-9 rounded-full bg-surface flex items-center justify-center relative">
+        <i data-lucide="bell" style="width:18px;height:18px" class="text-text"></i>
+        <span id="notif-dot" class="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full hidden"></span>
+      </button>
+      <button data-page="page-profile" class="w-9 h-9 rounded-full overflow-hidden border-2 border-brick/30 avatar-circle text-xs" id="header-avatar">?</button>
+    </div>
+  </header>
+
+  <div class="px-4 pt-6 pb-4">
+    <h2 id="home-greeting" class="font-bold text-xl mb-1">สวัสดี 👋</h2>
+    <p class="text-sm text-text/60 mb-5">ค้นหาที่จอดรถใกล้คณะของคุณได้ทันที</p>
+    <div class="relative">
+      <div class="flex items-center bg-white rounded-2xl shadow-md px-4 py-3 border border-brick/10">
+        <i data-lucide="search" style="width:20px;height:20px" class="text-brick/50 mr-3"></i>
+        <input id="search-input" type="text" placeholder="ค้นหาคณะ เช่น วิศวะ, EN, แพทย์" class="flex-1 outline-none text-sm bg-transparent" autocomplete="off">
+      </div>
+      <div id="autocomplete-list" class="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl overflow-hidden z-50 hidden max-h-60 overflow-y-auto"></div>
+    </div>
+  </div>
+
+  <div class="px-4 mb-5">
+    <div class="grid grid-cols-2 gap-3">
+      <div class="bg-white rounded-2xl p-4 shadow-sm card-hover fade-up">
+        <p class="text-xs text-text/50 mb-1">ที่จอดทั้งหมด</p>
+        <p id="stat-total" class="text-2xl font-bold text-brick">0</p>
+      </div>
+      <div class="bg-white rounded-2xl p-4 shadow-sm card-hover fade-up">
+        <p class="text-xs text-text/50 mb-1">ว่าง</p>
+        <p id="stat-available" class="text-2xl font-bold text-green-600">0</p>
+      </div>
+      <div class="bg-white rounded-2xl p-4 shadow-sm card-hover fade-up">
+        <p class="text-xs text-text/50 mb-1">ถูกใช้งาน</p>
+        <p id="stat-occupied" class="text-2xl font-bold text-brick-light">0</p>
+      </div>
+      <div class="bg-white rounded-2xl p-4 shadow-sm card-hover fade-up">
+        <p class="text-xs text-text/50 mb-1">การใช้งาน</p>
+        <p id="stat-usage" class="text-2xl font-bold text-accent">0%</p>
+      </div>
+    </div>
+    <p id="stat-updated" class="text-xs text-text/40 mt-2 text-right">อัปเดตล่าสุด: -</p>
+  </div>
+
+  <div class="px-4 mb-5">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-semibold text-base">การจองของฉัน</h3>
+      <span id="mybooking-count" class="text-xs text-brick font-medium"></span>
+    </div>
+    <div id="mybookings-container" class="space-y-3"></div>
+  </div>
+
+  <div id="parking-results" class="px-4">
+    <h3 class="font-semibold text-base mb-3">ลานจอดรถทั้งหมด</h3>
+    <div id="results-container" class="space-y-3"></div>
+  </div>
+</section>
+
+<!-- ============ MAP PAGE ============ -->
+<section id="page-map" class="page w-full" style="height:calc(var(--vh, 1vh) * 100)">
+  <div class="relative w-full h-full pb-20">
+    <div id="map-container"></div>
+    <button data-page="page-home" class="absolute top-4 left-4 z-[1000] w-10 h-10 bg-white rounded-full shadow-lg flex items-center justify-center">
+      <i data-lucide="arrow-left" style="width:20px;height:20px"></i>
+    </button>
+    <div id="map-info" class="absolute bottom-24 left-4 right-4 z-[1000] hidden bg-white rounded-2xl shadow-xl p-4"></div>
+  </div>
+</section>
+
+<!-- ============ NOTIFICATIONS ============ -->
+<section id="page-notifications" class="page min-h-screen w-full pb-28 bg-surface">
+  <header class="sticky top-0 z-30 glass-white px-4 py-4 flex items-center gap-3">
+    <button data-page="page-home" class="w-9 h-9 rounded-full bg-surface flex items-center justify-center"><i data-lucide="arrow-left" style="width:18px;height:18px"></i></button>
+    <h2 class="font-semibold text-lg">การแจ้งเตือน</h2>
+  </header>
+  <div id="notifications-container" class="px-4 pt-4 space-y-3"></div>
+</section>
+
+<!-- ============ PROFILE ============ -->
+<section id="page-profile" class="page min-h-screen w-full pb-28 bg-surface">
+  <header class="sticky top-0 z-30 glass-white px-4 py-4 flex items-center gap-3">
+    <button data-page="page-home" class="w-9 h-9 rounded-full bg-surface flex items-center justify-center"><i data-lucide="arrow-left" style="width:18px;height:18px"></i></button>
+    <h2 class="font-semibold text-lg">โปรไฟล์</h2>
+  </header>
+  <div class="px-4 pt-6 flex flex-col items-center">
+    <div id="profile-avatar" class="w-24 h-24 rounded-full avatar-circle border-4 border-brick/20 shadow-lg mb-4 text-2xl">?</div>
+    <h3 id="profile-name" class="font-semibold text-lg">-</h3>
+    <p id="profile-email" class="text-sm text-text/60 mb-1">-</p>
+    <span id="profile-role" class="inline-block px-3 py-1 rounded-full bg-brick/10 text-brick text-xs font-medium mb-6">-</span>
+
+    <div class="w-full bg-white rounded-2xl p-4 shadow-sm mb-3">
+      <div class="flex items-center justify-between mb-3">
+        <span class="text-sm text-text/60">การจองที่ใช้งานอยู่</span>
+        <span id="profile-active-count" class="text-sm font-bold text-brick">0</span>
+      </div>
+      <div class="flex items-center justify-between">
+        <span class="text-sm text-text/60">การจองทั้งหมด (สะสม)</span>
+        <span id="profile-total-count" class="text-sm font-bold text-brick">0</span>
+      </div>
+    </div>
+
+    <button data-page="page-settings" class="w-full bg-white rounded-2xl p-4 shadow-sm flex items-center justify-between mb-3 card-hover">
+      <span class="flex items-center gap-3"><i data-lucide="settings" style="width:18px;height:18px" class="text-brick"></i><span class="text-sm">ตั้งค่า</span></span>
+      <i data-lucide="chevron-right" style="width:16px;height:16px" class="text-text/30"></i>
+    </button>
+    <button id="logout-btn" class="ripple w-full py-3 rounded-2xl bg-red-50 text-red-600 font-medium text-sm mt-2">ออกจากระบบ</button>
+  </div>
+</section>
+
+<!-- ============ SETTINGS ============ -->
+<section id="page-settings" class="page min-h-screen w-full pb-28 bg-surface">
+  <header class="sticky top-0 z-30 glass-white px-4 py-4 flex items-center gap-3">
+    <button data-page="page-profile" class="w-9 h-9 rounded-full bg-surface flex items-center justify-center"><i data-lucide="arrow-left" style="width:18px;height:18px"></i></button>
+    <h2 class="font-semibold text-lg">ตั้งค่า</h2>
+  </header>
+  <div class="px-4 pt-4 space-y-3">
+    <div class="bg-white rounded-2xl p-4 shadow-sm flex items-center justify-between">
+      <span class="text-sm">ภาษา</span><span class="text-sm text-text/50">ไทย</span>
+    </div>
+    <div class="bg-white rounded-2xl p-4 shadow-sm flex items-center justify-between">
+      <span class="text-sm">การแจ้งเตือน</span>
+      <div class="toggle-switch on" data-toggle><div class="knob"></div></div>
+    </div>
+    <div class="bg-white rounded-2xl p-4 shadow-sm flex items-center justify-between">
+      <span class="text-sm">แจ้งเตือนเมื่อที่จอดว่าง</span>
+      <div class="toggle-switch on" data-toggle><div class="knob"></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLOT DETAIL / BOOKING MODAL ============ -->
+<div id="slot-modal" class="fixed inset-0 z-[9999] bg-black/40 hidden flex items-end sm:items-center justify-center">
+  <div class="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
+    <div class="sticky top-0 z-10 glass-white px-6 py-4 flex items-center justify-between border-b border-brick/10">
+      <h3 id="slot-modal-title" class="font-bold text-lg"></h3>
+      <button data-close-modal class="w-8 h-8 rounded-full bg-surface flex items-center justify-center"><i data-lucide="x" style="width:16px;height:16px"></i></button>
+    </div>
+    <div class="overflow-y-auto flex-1 px-6 py-4">
+      <div class="grid grid-cols-3 gap-3 mb-4">
+        <div class="bg-surface rounded-xl p-3 text-center"><p class="text-xs text-text/50 mb-1">ทั้งหมด</p><p id="slot-total" class="font-bold text-lg"></p></div>
+        <div class="bg-surface rounded-xl p-3 text-center"><p class="text-xs text-text/50 mb-1">ว่าง</p><p id="slot-available" class="font-bold text-lg text-green-600"></p></div>
+        <div class="bg-surface rounded-xl p-3 text-center"><p class="text-xs text-text/50 mb-1">ใช้งาน</p><p id="slot-occupied" class="font-bold text-lg text-brick-light"></p></div>
+      </div>
+      <div class="mb-6">
+        <div class="flex items-center gap-4 mb-3 text-xs text-text/60">
+          <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-green-100 border border-green-300 inline-block"></span>ว่าง</span>
+          <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-brick/30 inline-block"></span>ถูกจอง</span>
+          <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-accent/40 border-2 border-accent inline-block"></span>เลือกอยู่</span>
+        </div>
+        <p class="text-sm font-semibold mb-3">ช่องจอดรถ</p>
+        <div id="slots-grid" class="grid grid-cols-5 sm:grid-cols-6 gap-2"></div>
+      </div>
+      <form id="booking-form" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium mb-2">เวลาเริ่มใช้งาน</label>
+          <input type="datetime-local" id="entry-time" required class="w-full px-4 py-2 rounded-xl border border-brick/20 focus:outline-none focus:ring-2 focus:ring-brick/30">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-2">เวลาสิ้นสุด</label>
+          <input type="datetime-local" id="exit-time" required class="w-full px-4 py-2 rounded-xl border border-brick/20 focus:outline-none focus:ring-2 focus:ring-brick/30">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-2">ช่องจอดรถที่เลือก</label>
+          <input type="text" id="slot-number-display" readonly class="w-full px-4 py-2 rounded-xl border border-brick/20 bg-surface" placeholder="แตะเลือกช่องจอดด้านบน">
+        </div>
+        <p id="booking-error" class="text-xs text-red-600 hidden"></p>
+        <button type="submit" class="ripple w-full py-3 rounded-2xl bg-brick text-white font-semibold text-sm mt-2">จองที่จอดรถ</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ============ BOTTOM NAV ============ -->
+<nav id="bottom-nav" class="fixed bottom-0 left-0 right-0 z-40 glass-white border-t border-brick/10 px-2 py-2 hidden">
+  <div class="flex justify-around items-center max-w-lg mx-auto">
+    <button data-page="page-home" class="bottom-nav-item active-nav flex flex-col items-center gap-0.5 p-1" data-nav="page-home">
+      <i data-lucide="home" style="width:20px;height:20px"></i><span class="text-[10px]">หน้าหลัก</span>
+    </button>
+    <button data-page="page-map" class="bottom-nav-item flex flex-col items-center gap-0.5 p-1 text-text/50" data-nav="page-map">
+      <i data-lucide="map" style="width:20px;height:20px"></i><span class="text-[10px]">แผนที่</span>
+    </button>
+    <button data-page="page-notifications" class="bottom-nav-item flex flex-col items-center gap-0.5 p-1 text-text/50" data-nav="page-notifications">
+      <i data-lucide="bell" style="width:20px;height:20px"></i><span class="text-[10px]">แจ้งเตือน</span>
+    </button>
+    <button data-page="page-profile" class="bottom-nav-item flex flex-col items-center gap-0.5 p-1 text-text/50" data-nav="page-profile">
+      <i data-lucide="user" style="width:20px;height:20px"></i><span class="text-[10px]">โปรไฟล์</span>
+    </button>
+  </div>
+</nav>
+
+<!-- Toast -->
+<div id="toast" class="toast bg-red-600 text-white text-sm px-5 py-3 rounded-2xl shadow-xl flex items-center gap-2">
+  <i data-lucide="alert-circle" style="width:16px;height:16px"></i>
+  <span id="toast-text"></span>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ================= Fix mobile viewport height ================= */
+  function setVH() { document.documentElement.style.setProperty('--vh', (window.innerHeight * 0.01) + 'px'); }
+  setVH();
+  window.addEventListener('resize', setVH);
+  window.addEventListener('orientationchange', setVH);
+
+  /* ================= Data: Faculties ================= */
+  const FACULTIES = [
+    { id: 'eng',   name: 'คณะวิศวกรรมศาสตร์',              code: 'EN',  lat: 16.4726, lng: 102.8231, total: 60, walk: 2 },
+    { id: 'med',   name: 'คณะแพทยศาสตร์',                  code: 'MD',  lat: 16.4680, lng: 102.8300, total: 90, walk: 6 },
+    { id: 'sci',   name: 'คณะวิทยาศาสตร์',                  code: 'SC',  lat: 16.4737, lng: 102.8218, total: 55, walk: 3 },
+    { id: 'edu',   name: 'คณะศึกษาศาสตร์',                  code: 'ED',  lat: 16.4745, lng: 102.8195, total: 45, walk: 4 },
+    { id: 'hum',   name: 'คณะมนุษยศาสตร์และสังคมศาสตร์',     code: 'HS',  lat: 16.4752, lng: 102.8175, total: 50, walk: 5 },
+    { id: 'agr',   name: 'คณะเกษตรศาสตร์',                  code: 'AG',  lat: 16.4690, lng: 102.8155, total: 65, walk: 7 },
+    { id: 'arc',   name: 'คณะสถาปัตยกรรมศาสตร์',             code: 'AR',  lat: 16.4708, lng: 102.8265, total: 35, walk: 3 },
+    { id: 'law',   name: 'คณะนิติศาสตร์',                    code: 'LW',  lat: 16.4715, lng: 102.8280, total: 30, walk: 4 },
+    { id: 'biz',   name: 'คณะบริหารธุรกิจและการบัญชี',        code: 'BA',  lat: 16.4700, lng: 102.8290, total: 70, walk: 5 },
+    { id: 'ph',    name: 'คณะสาธารณสุขศาสตร์',               code: 'PH',  lat: 16.4670, lng: 102.8310, total: 40, walk: 6 },
+    { id: 'dent',  name: 'คณะทันตแพทยศาสตร์',                code: 'DT',  lat: 16.4665, lng: 102.8320, total: 35, walk: 7 },
+    { id: 'phar',  name: 'คณะเภสัชศาสตร์',                   code: 'PY',  lat: 16.4675, lng: 102.8330, total: 40, walk: 7 },
+    { id: 'fa',    name: 'คณะศิลปกรรมศาสตร์',                code: 'FA',  lat: 16.4760, lng: 102.8210, total: 25, walk: 5 },
+    { id: 'ams',   name: 'คณะเทคนิคการแพทย์',                code: 'AM',  lat: 16.4685, lng: 102.8340, total: 38, walk: 8 },
+    { id: 'vet',   name: 'คณะสัตวแพทยศาสตร์',                code: 'VM',  lat: 16.4650, lng: 102.8200, total: 45, walk: 9 },
+    { id: 'tech',  name: 'คณะเทคโนโลยี',                     code: 'TC',  lat: 16.4695, lng: 102.8140, total: 42, walk: 6 },
+    { id: 'nurse', name: 'คณะพยาบาลศาสตร์',                  code: 'NS',  lat: 16.4672, lng: 102.8295, total: 50, walk: 6 },
+    { id: 'econ',  name: 'คณะเศรษฐศาสตร์',                   code: 'EC',  lat: 16.4703, lng: 102.8270, total: 30, walk: 4 },
+    { id: 'lib',   name: 'สำนักหอสมุด',                      code: 'LIB', lat: 16.4722, lng: 102.8245, total: 60, walk: 2 },
+    { id: 'admin', name: 'สำนักงานอธิการบดี',                 code: 'AD',  lat: 16.4730, lng: 102.8260, total: 55, walk: 3 }
+  ];
+
+  const USER_LOCATION = { lat: 16.4735, lng: 102.8225 };
+
+  /* ================= Global State ================= */
+  let currentUser = null;        // { type:'student'|'email'|'guest', identifier, displayName, initials }
+  let currentTab = 'student';
+  let bookings = [];
+  let notifications = [];
+  let bookingIdSeq = 1;
+  let notifIdSeq = 1;
+  let currentOpenLotId = null;
+  let selectedSlotNumber = null;
+  let prevActiveKeySet = new Set();
+  let map = null;
+  let markersById = {};
+  let userMarker = null;
+  let routeLine = null;
+  let tickInterval = null;
+
+  /* ================= Utility ================= */
+  function $(sel) { return document.querySelector(sel); }
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  function toLocalInputValue(date) {
+    return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()) +
+      'T' + pad(date.getHours()) + ':' + pad(date.getMinutes());
+  }
+  function roundToNextMinutes(date, mins) {
+    const d = new Date(date);
+    const remainder = mins - (d.getMinutes() % mins);
+    d.setMinutes(d.getMinutes() + (remainder === mins ? 0 : remainder));
+    d.setSeconds(0, 0);
+    return d;
+  }
+  function shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+  function haversineKm(lat1, lng1, lat2, lng2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+  function formatRemaining(ms) {
+    if (ms <= 0) return '0 นาที';
+    const totalMin = Math.ceil(ms / 60000);
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    if (h > 0) return h + ' ชม. ' + m + ' นาที';
+    return m + ' นาที';
+  }
+  function timeAgo(date) {
+    const diffSec = Math.floor((Date.now() - date.getTime()) / 1000);
+    if (diffSec < 10) return 'เมื่อสักครู่';
+    if (diffSec < 60) return diffSec + ' วินาทีที่แล้ว';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return diffMin + ' นาทีที่แล้ว';
+    const diffHr = Math.floor(diffMin / 60);
+    return diffHr + ' ชั่วโมงที่แล้ว';
+  }
+  function showToast(message) {
+    const toast = $('#toast');
+    $('#toast-text').textContent = message;
+    toast.classList.add('show');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(function () { toast.classList.remove('show'); }, 3000);
+  }
+
+  /* ================= Login / Auth ================= */
+  function setFieldError(inputId, errorId, message) {
+    const input = document.getElementById(inputId);
+    const errEl = document.getElementById(errorId);
+    if (message) { input.classList.add('error'); errEl.textContent = message; errEl.classList.add('show'); }
+    else { input.classList.remove('error'); errEl.classList.remove('show'); }
+  }
+  function clearAllErrors() {
+    setFieldError('input-student-id', 'err-student-id', '');
+    setFieldError('input-email', 'err-email', '');
+    setFieldError('input-password', 'err-password', '');
+  }
+  function shakeCard() {
+    const card = document.querySelector('#page-login .glass');
+    card.classList.remove('shake');
+    void card.offsetWidth;
+    card.classList.add('shake');
+  }
+  function isValidStudentId(val) { return /^[0-9]{5,10}-?[0-9]?$/.test(val.trim()); }
+  function isValidKkuEmail(val) { return /^[a-zA-Z0-9._%+-]+@kkumail\.com$/.test(val.trim()); }
+
+  function switchTab(tab) {
+    currentTab = tab;
+    document.querySelectorAll('.tab-btn').forEach(function (btn) { btn.classList.toggle('active', btn.dataset.tab === tab); });
+    $('#field-student').classList.toggle('hidden', tab !== 'student');
+    $('#field-email').classList.toggle('hidden', tab !== 'email');
+    clearAllErrors();
+  }
+
+  function togglePasswordVisibility() {
+    const input = $('#input-password');
+    const btn = $('#toggle-password');
+    const isPw = input.type === 'password';
+    input.type = isPw ? 'text' : 'password';
+    btn.innerHTML = isPw
+      ? '<i data-lucide="eye-off" style="width:18px;height:18px"></i>'
+      : '<i data-lucide="eye" style="width:18px;height:18px"></i>';
+    lucide.createIcons();
+  }
+
+  function getInitials(text) {
+    const clean = text.replace(/[^a-zA-Zก-๙0-9]/g, '');
+    return clean.slice(0, 2).toUpperCase() || 'ผู';
+  }
+
+  function handleLoginSubmit(e) {
+    e.preventDefault();
+    clearAllErrors();
+    let hasError = false;
+    let identifierValue = '';
+
+    if (currentTab === 'student') {
+      identifierValue = $('#input-student-id').value.trim();
+      if (!identifierValue) { setFieldError('input-student-id', 'err-student-id', 'กรุณากรอกรหัสนักศึกษา'); hasError = true; }
+      else if (!isValidStudentId(identifierValue)) { setFieldError('input-student-id', 'err-student-id', 'รูปแบบรหัสนักศึกษาไม่ถูกต้อง'); hasError = true; }
+    } else {
+      identifierValue = $('#input-email').value.trim();
+      if (!identifierValue) { setFieldError('input-email', 'err-email', 'กรุณากรอกอีเมล'); hasError = true; }
+      else if (!isValidKkuEmail(identifierValue)) { setFieldError('input-email', 'err-email', 'กรุณาใช้อีเมล KKU (@kkumail.com)'); hasError = true; }
+    }
+
+    const password = $('#input-password').value;
+    if (!password) { setFieldError('input-password', 'err-password', 'กรุณากรอกรหัสผ่าน'); hasError = true; }
+    else if (password.length < 6) { setFieldError('input-password', 'err-password', 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร'); hasError = true; }
+
+    if (hasError) { shakeCard(); return; }
+    performLogin(currentTab, identifierValue);
+  }
+
+  function performLogin(type, identifier) {
+    const submitBtn = $('#submit-btn');
+    const submitText = $('#submit-text');
+    submitBtn.disabled = true;
+    submitBtn.classList.add('opacity-80', 'cursor-not-allowed');
+    submitText.innerHTML = '<span class="spinner align-middle"></span>';
+
+    setTimeout(function () {
+      submitBtn.disabled = false;
+      submitBtn.classList.remove('opacity-80', 'cursor-not-allowed');
+      submitText.textContent = 'เข้าสู่ระบบ';
+
+      currentUser = {
+        type: type,
+        identifier: identifier,
+        displayName: type === 'student' ? ('นักศึกษา ' + identifier) : identifier,
+        email: type === 'email' ? identifier : identifier + '@kkumail.com',
+        role: type === 'email' ? 'บุคลากร' : 'นักศึกษา',
+        initials: getInitials(identifier)
+      };
+
+      applyUserToUI();
+      enterApp();
+      addNotification('เข้าสู่ระบบสำเร็จ ยินดีต้อนรับ ' + currentUser.displayName, 'success');
+    }, 1300);
+  }
+
+  function handleGuestLogin() {
+    currentUser = {
+      type: 'guest',
+      identifier: 'guest',
+      displayName: 'ผู้เยี่ยมชม',
+      email: 'guest@kkumail.com',
+      role: 'ผู้เยี่ยมชม',
+      initials: 'GU'
+    };
+    applyUserToUI();
+    enterApp();
+    addNotification('เข้าใช้งานในโหมดผู้เยี่ยมชม', 'info');
+  }
+
+  function applyUserToUI() {
+    if (!currentUser) return;
+    $('#home-greeting').textContent = 'สวัสดี ' + currentUser.displayName + ' 👋';
+    $('#header-avatar').textContent = currentUser.initials;
+    $('#profile-avatar').textContent = currentUser.initials;
+    $('#profile-name').textContent = currentUser.displayName;
+    $('#profile-email').textContent = currentUser.email;
+    $('#profile-role').textContent = currentUser.role;
+  }
+
+  function enterApp() {
+    showPage('page-home');
+    document.getElementById('bottom-nav').classList.remove('hidden');
+    refreshAllViews();
+    lucide.createIcons();
+  }
+
+  function handleLogout() {
+    // เคลียร์ข้อมูล session ในหน่วยความจำ (ไม่แตะ storage ใด ๆ ตามข้อกำหนดความปลอดภัย)
+    currentUser = null;
+    bookings = bookings.filter(function (b) { return b.owner !== 'me'; }); // ล้างการจองของผู้ใช้ที่ออกจากระบบ
+    $('#login-form').reset();
+    clearAllErrors();
+    switchTab('student');
+    document.getElementById('bottom-nav').classList.add('hidden');
+    showPage('page-login');
+    lucide.createIcons();
+  }
+
+  /* ================= Booking Core Logic ================= */
+  function isBookingActive(b, now) { return b.entry.getTime() <= now.getTime() && b.exit.getTime() > now.getTime(); }
+  function getActiveBookings(lotId, now) { return bookings.filter(function (b) { return b.lotId === lotId && isBookingActive(b, now); }); }
+  function getLotStats(lotId, now) {
+    const lot = FACULTIES.find(function (f) { return f.id === lotId; });
+    const activeSlots = new Set(getActiveBookings(lotId, now).map(function (b) { return b.slotNumber; }));
+    const occupied = activeSlots.size;
+    return { total: lot.total, occupied: occupied, available: lot.total - occupied };
+  }
+  function getGlobalStats(now) {
+    let total = 0, occupied = 0;
+    FACULTIES.forEach(function (f) { const s = getLotStats(f.id, now); total += s.total; occupied += s.occupied; });
+    return { total: total, occupied: occupied, available: total - occupied, usage: total ? Math.round(occupied / total * 100) : 0 };
+  }
+  function getStatusInfo(available, total) {
+    const ratio = total ? available / total : 0;
+    if (ratio > 0.2) return { color: '#22c55e', label: 'ว่าง', bg: 'bg-green-50', text: 'text-green-700', emoji: '🟢' };
+    if (ratio > 0)   return { color: '#eab308', label: 'ใกล้เต็ม', bg: 'bg-yellow-50', text: 'text-yellow-700', emoji: '🟡' };
+    return { color: '#ef4444', label: 'เต็ม', bg: 'bg-red-50', text: 'text-red-600', emoji: '🔴' };
+  }
+  function isSlotActiveNow(lotId, slotNumber, now) {
+    return bookings.some(function (b) { return b.lotId === lotId && b.slotNumber === slotNumber && isBookingActive(b, now); });
+  }
+  function hasConflict(lotId, slotNumber, entry, exit, excludeId) {
+    return bookings.some(function (b) {
+      if (b.id === excludeId) return false;
+      if (b.lotId !== lotId || b.slotNumber !== slotNumber) return false;
+      return entry.getTime() < b.exit.getTime() && exit.getTime() > b.entry.getTime();
+    });
+  }
+
+  function seedDemoBookings() {
+    if (bookings.some(function (b) { return b.owner === 'demo'; })) return; // seed once
+    const now = Date.now();
+    FACULTIES.forEach(function (f) {
+      const occupyRatio = 0.25 + Math.random() * 0.55;
+      const occupyCount = Math.floor(f.total * occupyRatio);
+      const slotsPool = shuffle(Array.from({ length: f.total }, function (_, i) { return i + 1; }));
+      for (let i = 0; i < occupyCount; i++) {
+        const slotNumber = slotsPool[i];
+        const entryOffsetMin = -Math.floor(Math.random() * 60);
+        const durationMin = 3 + Math.floor(Math.random() * 40);
+        const entry = new Date(now + entryOffsetMin * 60000);
+        const exit = new Date(entry.getTime() + durationMin * 60000);
+        bookings.push({ id: bookingIdSeq++, lotId: f.id, slotNumber: slotNumber, entry: entry, exit: exit, owner: 'demo' });
+      }
+    });
+  }
+
+  /* ================= Notifications ================= */
+  function addNotification(message, type) {
+    notifications.unshift({ id: notifIdSeq++, message: message, time: new Date(), type: type || 'info' });
+    if (notifications.length > 30) notifications.pop();
+    renderNotifBadge();
+    renderNotifications();
+  }
+  function renderNotifBadge() { document.getElementById('notif-dot').classList.toggle('hidden', notifications.length === 0); }
+  function renderNotifications() {
+    const container = document.getElementById('notifications-container');
+    if (!container) return;
+    if (notifications.length === 0) {
+      container.innerHTML = '<p class="text-center text-sm text-text/40 py-10">ยังไม่มีการแจ้งเตือน</p>';
+      return;
+    }
+    container.innerHTML = notifications.map(function (n) {
+      const emoji = n.type === 'available' ? '🟢' : n.type === 'full' ? '🔴' : n.type === 'success' ? '✅' : '🔵';
+      return '<div class="bg-white rounded-2xl p-4 shadow-sm flex gap-3 items-start">' +
+        '<div class="w-8 h-8 rounded-full bg-surface flex items-center justify-center flex-shrink-0"><span class="text-sm">' + emoji + '</span></div>' +
+        '<div><p class="text-sm font-medium">' + n.message + '</p><p class="text-xs text-text/50">' + timeAgo(n.time) + '</p></div>' +
+        '</div>';
+    }).join('');
+  }
+
+  /* ================= Navigation ================= */
+  function showPage(id) {
+    document.querySelectorAll('.page').forEach(function (p) { p.classList.remove('active'); });
+    const page = document.getElementById(id);
+    if (!page) return;
+    page.classList.add('active');
+    if (id !== 'page-login') {
+      document.querySelectorAll('.bottom-nav-item').forEach(function (b) {
+        const isActive = b.dataset.nav === id;
+        b.classList.toggle('active-nav', isActive);
+        b.classList.toggle('text-text/50', !isActive);
+      });
+    }
+    if (id === 'page-map') {
+      if (!map) initMap();
+      setTimeout(function () { if (map) map.invalidateSize(); }, 100);
+    }
+    if (id === 'page-profile') renderProfileStats();
+  }
+
+  /* ================= Search / Autocomplete ================= */
+  function handleSearchInput(val) { renderAutocomplete(val); renderResults(val); }
+  function renderAutocomplete(val) {
+    const list = document.getElementById('autocomplete-list');
+    if (!val) { list.classList.add('hidden'); list.innerHTML = ''; return; }
+    const q = val.toLowerCase();
+    const matches = FACULTIES.filter(function (f) { return f.name.toLowerCase().indexOf(q) !== -1 || f.code.toLowerCase().indexOf(q) !== -1; });
+    if (!matches.length) { list.classList.add('hidden'); return; }
+    list.innerHTML = matches.slice(0, 6).map(function (f) {
+      return '<div class="autocomplete-item px-4 py-3 cursor-pointer text-sm border-b border-gray-50" data-building="' + f.id + '">' +
+        f.name + ' <span class="text-text/40 text-xs">(' + f.code + ')</span></div>';
+    }).join('');
+    list.classList.remove('hidden');
+  }
+  function selectBuildingFromAutocomplete(id) {
+    document.getElementById('autocomplete-list').classList.add('hidden');
+    const f = FACULTIES.find(function (x) { return x.id === id; });
+    document.getElementById('search-input').value = f.name;
+    renderResults(f.name);
+  }
+  function renderResults(query) {
+    const now = new Date();
+    const container = document.getElementById('results-container');
+    const q = (query || '').toLowerCase().trim();
+    const list = FACULTIES.filter(function (f) {
+      if (!q) return true;
+      return f.name.toLowerCase().indexOf(q) !== -1 || f.code.toLowerCase().indexOf(q) !== -1;
+    });
+    if (!list.length) { container.innerHTML = '<p class="text-center text-sm text-text/40 py-8">ไม่พบลานจอดที่ตรงกับคำค้นหา</p>'; return; }
+    container.innerHTML = list.map(function (f) {
+      const s = getLotStats(f.id, now);
+      const info = getStatusInfo(s.available, s.total);
+      return '<div class="bg-white rounded-2xl p-4 shadow-sm card-hover fade-up">' +
+        '<div class="flex justify-between items-start mb-2">' +
+        '<div><h4 class="font-semibold text-sm">' + f.name + ' <span class="text-text/40 text-xs">(' + f.code + ')</span></h4>' +
+        '<p class="text-xs text-text/50">เดิน ' + f.walk + ' นาที &middot; รวม ' + s.total + ' ช่อง</p></div>' +
+        '<span class="px-2 py-1 rounded-full text-xs font-medium ' + info.bg + ' ' + info.text + ' whitespace-nowrap">' + info.emoji + ' ' + info.label + (s.available ? ' ' + s.available + ' คัน' : '') + '</span>' +
+        '</div>' +
+        '<div class="flex gap-2 mt-3">' +
+        '<button data-navigate="' + f.id + '" class="ripple flex-1 py-2 rounded-xl bg-brick text-white text-xs font-medium">นำทาง</button>' +
+        '<button data-detail="' + f.id + '" class="flex-1 py-2 rounded-xl bg-surface text-text text-xs font-medium border border-brick/10">จอง/รายละเอียด</button>' +
+        '</div></div>';
+    }).join('');
+  }
+
+  /* ================= My Bookings ================= */
+  function renderMyBookings() {
+    const now = new Date();
+    const container = document.getElementById('mybookings-container');
+    const countEl = document.getElementById('mybooking-count');
+    const mine = bookings.filter(function (b) { return b.owner === 'me' && b.exit.getTime() > now.getTime(); }).sort(function (a, b) { return a.exit - b.exit; });
+    countEl.textContent = mine.length ? mine.length + ' รายการ' : '';
+    if (!currentUser) { container.innerHTML = ''; return; }
+    if (!mine.length) { container.innerHTML = '<div class="bg-white rounded-2xl p-4 text-center text-sm text-text/40">คุณยังไม่มีการจองที่ใช้งานอยู่</div>'; return; }
+    container.innerHTML = mine.map(function (b) {
+      const f = FACULTIES.find(function (x) { return x.id === b.lotId; });
+      const active = isBookingActive(b, now);
+      const remain = active ? formatRemaining(b.exit - now) + ' ก่อนหมดเวลา' : 'เริ่มในอีก ' + formatRemaining(b.entry - now);
+      const badgeClass = active ? 'bg-brick/10 text-brick' : 'bg-blue-50 text-blue-600';
+      return '<div class="bg-white rounded-2xl p-4 shadow-sm flex items-center justify-between gap-3">' +
+        '<div class="flex-1 min-w-0">' +
+        '<p class="text-sm font-semibold truncate">' + f.name + ' &middot; ช่อง ' + b.slotNumber + '</p>' +
+        '<p class="text-xs text-text/50">' + formatShortRange(b.entry, b.exit) + '</p>' +
+        '<span class="inline-block mt-1 text-[11px] px-2 py-0.5 rounded-full ' + badgeClass + '">' + remain + '</span>' +
+        '</div>' +
+        '<button data-cancel-booking="' + b.id + '" class="ripple flex-shrink-0 px-3 py-2 rounded-xl bg-red-50 text-red-600 text-xs font-medium">ยกเลิก</button>' +
+        '</div>';
+    }).join('');
+  }
+  function formatShortRange(entry, exit) {
+    const sameDay = entry.toDateString() === exit.toDateString();
+    const opts = { hour: '2-digit', minute: '2-digit' };
+    const dOpts = { day: '2-digit', month: '2-digit' };
+    if (sameDay) return entry.toLocaleDateString('th-TH', dOpts) + ' ' + entry.toLocaleTimeString('th-TH', opts) + ' - ' + exit.toLocaleTimeString('th-TH', opts);
+    return entry.toLocaleDateString('th-TH', dOpts) + ' ' + entry.toLocaleTimeString('th-TH', opts) + ' - ' + exit.toLocaleDateString('th-TH', dOpts) + ' ' + exit.toLocaleTimeString('th-TH', opts);
+  }
+  function cancelBooking(id) {
+    const b = bookings.find(function (x) { return x.id === id; });
+    bookings = bookings.filter(function (x) { return x.id !== id; });
+    if (b) {
+      const f = FACULTIES.find(function (x) { return x.id === b.lotId; });
+      addNotification('ยกเลิกการจองช่อง ' + b.slotNumber + ' ที่ ' + f.name + ' แล้ว', 'info');
+    }
+    refreshAllViews();
+  }
+
+  /* ================= Profile Stats ================= */
+  function renderProfileStats() {
+    if (!currentUser) return;
+    const now = new Date();
+    const mine = bookings.filter(function (b) { return b.owner === 'me'; });
+    const active = mine.filter(function (b) { return isBookingActive(b, now); });
+    document.getElementById('profile-active-count').textContent = active.length;
+    document.getElementById('profile-total-count').textContent = mine.length;
+  }
+
+  /* ================= Dashboard ================= */
+  function renderDashboard() {
+    const now = new Date();
+    const stats = getGlobalStats(now);
+    document.getElementById('stat-total').textContent = stats.total;
+    document.getElementById('stat-available').textContent = stats.available;
+    document.getElementById('stat-occupied').textContent = stats.occupied;
+    document.getElementById('stat-usage').textContent = stats.usage + '%';
+    document.getElementById('stat-updated').textContent = 'อัปเดตล่าสุด: ' + timeAgo(now);
+  }
+
+  /* ================= Slot Booking Modal ================= */
+  function openSlotModal(lotId) {
+    currentOpenLotId = lotId;
+    selectedSlotNumber = null;
+    document.getElementById('booking-error').classList.add('hidden');
+    const now = new Date();
+    const entryDefault = roundToNextMinutes(now, 5);
+    const exitDefault = new Date(entryDefault.getTime() + 60 * 60000);
+    const entryInput = document.getElementById('entry-time');
+    const exitInput = document.getElementById('exit-time');
+    entryInput.min = toLocalInputValue(now);
+    entryInput.value = toLocalInputValue(entryDefault);
+    exitInput.min = toLocalInputValue(entryDefault);
+    exitInput.value = toLocalInputValue(exitDefault);
+    document.getElementById('slot-number-display').value = '';
+    renderSlotModalBody(lotId);
+    document.getElementById('slot-modal').classList.remove('hidden');
+    lucide.createIcons();
+  }
+  function renderSlotModalBody(lotId) {
+    const now = new Date();
+    const f = FACULTIES.find(function (x) { return x.id === lotId; });
+    const stats = getLotStats(lotId, now);
+    document.getElementById('slot-modal-title').textContent = f.name;
+    document.getElementById('slot-total').textContent = stats.total;
+    document.getElementById('slot-available').textContent = stats.available;
+    document.getElementById('slot-occupied').textContent = stats.occupied;
+
+    const grid = document.getElementById('slots-grid');
+    let html = '';
+    for (let i = 1; i <= f.total; i++) {
+      const occupied = isSlotActiveNow(lotId, i, now);
+      const isSelected = selectedSlotNumber === i;
+      let cls = 'bg-green-100 text-green-700 hover:bg-green-200 border-2 border-green-300';
+      if (occupied) cls = 'bg-brick/20 text-brick/50 cursor-not-allowed border-2 border-transparent';
+      else if (isSelected) cls = 'bg-accent/40 text-brick border-2 border-accent';
+      html += '<button type="button" data-slot="' + i + '" ' + (occupied ? 'disabled' : '') +
+        ' class="w-full aspect-square rounded-lg font-medium text-xs transition-all ' + cls + '">' + pad(i) + '</button>';
+    }
+    grid.innerHTML = html;
+  }
+  function selectSlot(slotNumber) {
+    selectedSlotNumber = slotNumber;
+    document.getElementById('slot-number-display').value = 'ช่องที่ ' + pad(slotNumber);
+    renderSlotModalBody(currentOpenLotId);
+  }
+  function closeSlotModal() {
+    document.getElementById('slot-modal').classList.add('hidden');
+    currentOpenLotId = null;
+    selectedSlotNumber = null;
+  }
+  function showBookingError(msg) {
+    const el = document.getElementById('booking-error');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+  }
+  function handleBookingSubmit(e) {
+    e.preventDefault();
+    const errEl = document.getElementById('booking-error');
+    errEl.classList.add('hidden');
+
+    if (!currentUser) { showBookingError('กรุณาเข้าสู่ระบบก่อนทำการจอง'); return; }
+    if (!currentOpenLotId) return;
+    if (!selectedSlotNumber) { showBookingError('กรุณาเลือกช่องจอดรถ'); return; }
+
+    const entry = new Date(document.getElementById('entry-time').value);
+    const exit = new Date(document.getElementById('exit-time').value);
+    const now = new Date();
+
+    if (isNaN(entry.getTime()) || isNaN(exit.getTime())) { showBookingError('กรุณาระบุเวลาให้ถูกต้อง'); return; }
+    if (exit.getTime() <= entry.getTime()) { showBookingError('เวลาสิ้นสุดต้องอยู่หลังเวลาเริ่มใช้งาน'); return; }
+    if (entry.getTime() < now.getTime() - 60000) { showBookingError('เวลาเริ่มใช้งานต้องไม่อยู่ในอดีต'); return; }
+    if (hasConflict(currentOpenLotId, selectedSlotNumber, entry, exit, null)) {
+      showBookingError('ช่องจอดนี้มีการจองในช่วงเวลาที่เลือกอยู่แล้ว กรุณาเลือกช่องอื่นหรือเวลาอื่น');
+      return;
+    }
+
+    bookings.push({ id: bookingIdSeq++, lotId: currentOpenLotId, slotNumber: selectedSlotNumber, entry: entry, exit: exit, owner: 'me' });
+
+    const f = FACULTIES.find(function (x) { return x.id === currentOpenLotId; });
+    addNotification('จองที่จอดสำเร็จ: ' + f.name + ' ช่อง ' + selectedSlotNumber + ' (' + formatShortRange(entry, exit) + ')', 'success');
+
+    const btn = e.target.querySelector('button[type="submit"]');
+    const originalText = btn.textContent;
+    btn.textContent = '✓ จองสำเร็จ';
+    btn.disabled = true;
+    btn.classList.add('bg-green-600');
+
+    refreshAllViews();
+
+    setTimeout(function () {
+      closeSlotModal();
+      btn.textContent = originalText;
+      btn.disabled = false;
+      btn.classList.remove('bg-green-600');
+    }, 1200);
+  }
+
+  /* ================= Map ================= */
+  function initMap() {
+    map = L.map('map-container', { zoomControl: true }).setView([16.4720, 102.8230], 15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors', maxZoom: 19 }).addTo(map);
+
+    userMarker = L.circleMarker([USER_LOCATION.lat, USER_LOCATION.lng], {
+      radius: 8, fillColor: '#3b82f6', color: '#1e40af', weight: 3, opacity: 1, fillOpacity: 0.85
+    }).addTo(map).bindPopup('ตำแหน่งของคุณ');
+
+    FACULTIES.forEach(function (f) {
+      const marker = L.marker([f.lat, f.lng], { icon: buildIcon(f.id) }).addTo(map);
+      marker.on('click', function () { openSlotModal(f.id); });
+      markersById[f.id] = marker;
+    });
+    renderMapMarkers();
+  }
+  function buildIcon(lotId) {
+    const now = new Date();
+    const stats = getLotStats(lotId, now);
+    const info = getStatusInfo(stats.available, stats.total);
+    return L.divIcon({
+      html: '<div style="width:26px;height:26px;border-radius:50%;background:' + info.color + ';border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3)" class="pulse-dot"></div>',
+      className: '', iconSize: [26, 26]
+    });
+  }
+  function renderMapMarkers() {
+    if (!map) return;
+    const now = new Date();
+    FACULTIES.forEach(function (f) {
+      const marker = markersById[f.id];
+      if (!marker) return;
+      const stats = getLotStats(f.id, now);
+      const info = getStatusInfo(stats.available, stats.total);
+      marker.setIcon(L.divIcon({
+        html: '<div style="width:26px;height:26px;border-radius:50%;background:' + info.color + ';border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3)" class="pulse-dot"></div>',
+        className: '', iconSize: [26, 26]
+      }));
+      marker.setPopupContent('<b>' + f.name + '</b><br>' + info.emoji + ' ' + info.label + ' ' + stats.available + '/' + stats.total + ' คัน');
+    });
+  }
+  function navigateTo(lotId) {
+    showPage('page-map');
+    if (!map) initMap();
+    setTimeout(function () { drawRouteAndInfo(lotId); }, 150);
+  }
+  function drawRouteAndInfo(lotId) {
+    const f = FACULTIES.find(function (x) { return x.id === lotId; });
+    if (!f) return;
+    if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+
+    routeLine = L.polyline(
+      [[USER_LOCATION.lat, USER_LOCATION.lng], [f.lat, f.lng]],
+      { color: '#3b82f6', weight: 4, opacity: 0.75, dashArray: '6,8', lineCap: 'round' }
+    ).addTo(map);
+
+    const group = L.featureGroup([userMarker, routeLine]);
+    map.fitBounds(group.getBounds().pad(0.25));
+
+    const distanceKm = haversineKm(USER_LOCATION.lat, USER_LOCATION.lng, f.lat, f.lng);
+    const walkMin = Math.max(1, Math.round(distanceKm * 1000 / 80));
+    const stats = getLotStats(lotId, new Date());
+    const info = getStatusInfo(stats.available, stats.total);
+
+    const infoBox = document.getElementById('map-info');
+    infoBox.classList.remove('hidden');
+    infoBox.innerHTML =
+      '<div class="flex items-center justify-between mb-2"><h4 class="font-semibold text-sm">' + f.name + '</h4>' +
+      '<span class="px-2 py-1 rounded-full text-xs font-medium ' + info.bg + ' ' + info.text + '">' + info.emoji + ' ' + info.label + '</span></div>' +
+      '<p class="text-xs text-text/60 mb-3">ระยะทางประมาณ ' + distanceKm.toFixed(2) + ' กม. &middot; เดินประมาณ ' + walkMin + ' นาที &middot; ว่าง ' + stats.available + '/' + stats.total + ' ช่อง</p>' +
+      '<button data-detail="' + f.id + '" class="ripple w-full py-2.5 rounded-xl bg-brick text-white text-xs font-semibold">จองที่จอด</button>';
+  }
+
+  /* ================= Global Refresh / Tick ================= */
+  function refreshAllViews() {
+    renderDashboard();
+    renderMyBookings();
+    renderResults(document.getElementById('search-input').value);
+    if (map) renderMapMarkers();
+    if (currentOpenLotId && !document.getElementById('slot-modal').classList.contains('hidden')) renderSlotModalBody(currentOpenLotId);
+    renderNotifBadge();
+    if (document.getElementById('page-profile').classList.contains('active')) renderProfileStats();
+  }
+
+  function tick() {
+    if (!currentUser) return; // ไม่ต้องรันขณะอยู่หน้า login
+    const now = new Date();
+    const currentActive = new Set();
+    bookings.forEach(function (b) { if (isBookingActive(b, now)) currentActive.add(b.lotId + ':' + b.slotNumber); });
+    prevActiveKeySet.forEach(function (key) {
+      if (!currentActive.has(key)) {
+        const parts = key.split(':');
+        const lotId = parts[0];
+        const slotNumber = parts[1];
+        const f = FACULTIES.find(function (x) { return x.id === lotId; });
+        if (f) addNotification('ช่องจอด ' + slotNumber + ' ที่ ' + f.name + ' ว่างแล้ว สามารถจองใหม่ได้', 'available');
+      }
+    });
+    prevActiveKeySet = currentActive;
+    refreshAllViews();
+  }
+
+  /* ================= Event Delegation ================= */
+  function attachEvents() {
+    document.addEventListener('click', function (e) {
+      const navEl = e.target.closest('[data-page]');
+      if (navEl) { showPage(navEl.dataset.page); return; }
+
+      const focusSearchBtn = e.target.closest('[data-action="focus-search"]');
+      if (focusSearchBtn) { showPage('page-home'); setTimeout(function () { document.getElementById('search-input').focus(); }, 50); return; }
+
+      const navigateBtn = e.target.closest('[data-navigate]');
+      if (navigateBtn) { navigateTo(navigateBtn.dataset.navigate); return; }
+
+      const detailBtn = e.target.closest('[data-detail]');
+      if (detailBtn) { openSlotModal(detailBtn.dataset.detail); return; }
+
+      const closeModalBtn = e.target.closest('[data-close-modal]');
+      if (closeModalBtn) { closeSlotModal(); return; }
+
+      const slotBtn = e.target.closest('[data-slot]');
+      if (slotBtn && !slotBtn.disabled) { selectSlot(parseInt(slotBtn.dataset.slot, 10)); return; }
+
+      const buildingEl = e.target.closest('[data-building]');
+      if (buildingEl) { selectBuildingFromAutocomplete(buildingEl.dataset.building); return; }
+
+      const cancelBtn = e.target.closest('[data-cancel-booking]');
+      if (cancelBtn) { cancelBooking(parseInt(cancelBtn.dataset.cancelBooking, 10)); return; }
+
+      const toggleEl = e.target.closest('[data-toggle]');
+      if (toggleEl) { toggleEl.classList.toggle('on'); toggleEl.classList.toggle('off'); return; }
+
+      if (!e.target.closest('#search-input') && !e.target.closest('#autocomplete-list')) {
+        document.getElementById('autocomplete-list').classList.add('hidden');
+      }
+      if (e.target.id === 'slot-modal') closeSlotModal();
+    });
+
+    document.getElementById('search-input').addEventListener('input', function (e) { handleSearchInput(e.target.value); });
+    document.getElementById('search-input').addEventListener('focus', function (e) { handleSearchInput(e.target.value); });
+    document.getElementById('booking-form').addEventListener('submit', handleBookingSubmit);
+    document.getElementById('entry-time').addEventListener('change', function (e) {
+      const exitInput = document.getElementById('exit-time');
+      exitInput.min = e.target.value;
+      if (exitInput.value && new Date(exitInput.value) <= new Date(e.target.value)) {
+        const newExit = new Date(new Date(e.target.value).getTime() + 60 * 60000);
+        exitInput.value = toLocalInputValue(newExit);
+      }
+    });
+
+    document.querySelectorAll('.tab-btn').forEach(function (btn) { btn.addEventListener('click', function () { switchTab(btn.dataset.tab); }); });
+    document.getElementById('toggle-password').addEventListener('click', togglePasswordVisibility);
+    document.getElementById('login-form').addEventListener('submit', handleLoginSubmit);
+    document.getElementById('guest-btn').addEventListener('click', handleGuestLogin);
+    document.getElementById('logout-btn').addEventListener('click', handleLogout);
+    document.getElementById('forgot-link').addEventListener('click', function () {
+      showToast('กรุณาติดต่อสำนักบริการเทคโนโลยีสารสนเทศเพื่อรีเซ็ตรหัสผ่าน');
+    });
+
+    ['input-student-id', 'input-email', 'input-password'].forEach(function (id) {
+      document.getElementById(id).addEventListener('input', function () {
+        const map2 = { 'input-student-id': 'err-student-id', 'input-email': 'err-email', 'input-password': 'err-password' };
+        if (this.value.trim ? this.value.trim() : this.value) setFieldError(id, map2[id], '');
+      });
+    });
+  }
+
+  /* ================= Init ================= */
+  document.addEventListener('DOMContentLoaded', function () {
+    seedDemoBookings();
+    lucide.createIcons();
+    attachEvents();
+    tickInterval = setInterval(tick, 5000);
+  });
+})();
+</script>
+</body>
+</html>
